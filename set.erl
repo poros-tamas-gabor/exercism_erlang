@@ -17,3 +17,6 @@ contains(Value, [{_Node, _Left, _Right}]) -> contains(Value, _Right).
 tree_to_list([]) -> [];
 tree_to_list({Value, [], T}) -> [Value | tree_to_list(T)];
 tree_to_list([{Value, Left, Right}]) -> tree_to_list(Left) ++ [Value] ++ tree_to_list(Right).
+
+list_to_tree([]) -> [];
+list_to_tree([H | T]) -> add(H, list_to_tree(T)).
