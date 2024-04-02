@@ -9,21 +9,30 @@
 %-type beverage() :: tea | coffee | milk | orange_juice | water.
 %-type cigarette() :: old_gold | kools | chesterfields | lucky_strike | parliaments.
 
+-define(STATEMENT_CONFIGS,
+ [{{color, red}, {nation, english}},
+  {{pet, dog},{nation, spaniard}},
+  {{beverage, coffee}, {color, green}},
+  {{nation, ukrainian}, {beverage, tea}},
+  {{cigarette, old_gold}, {pet, snail}},
+  {{cigarette, kools}, {color, yellow}},
+  {{beverage, milk}, {house_num, 3}},
+  {{nation, norwegian}, {house_num, 1}},
+  {{beverage, orange_juice}, {cigarette, lucky_strike}},
+  {{nation, japanese}, {cigarette, parliaments}},
+  {{color, blue}, {house_num, 2}},
+  {{color, green}, {color, ivory}, fun id/1},
+  {{cigarette, chesterfields}, {pet, fox}, fun abs/1},
+  {{cigarette, kools}, {pet, horse}, fun abs/1}
+]).
+
 -define(STATEMENTS,
-  [fun statement_2nd/1,
-   fun statement_3rd/1,
-   fun statement_4th/1,
-   fun statement_5th/1,
-   fun statement_6th/1,
-   fun statement_7th/1,
-   fun statement_8th/1,
-   fun statement_9th/1,
-   fun statement_10th/1,
-   fun statement_11th/1,
-   fun statement_12th/1,
-   fun statement_13th/1,
-   fun statement_14th/1,
-   fun statement_15th/1]).
+  lists:map(
+  fun
+    (Config) -> fun (X) -> statement(X, Config) end
+  end,
+  ?STATEMENT_CONFIGS
+  )).
 
 -define(FALSE_STATEMENTS,
   [fun neg_statement_2nd/1,
@@ -56,33 +65,29 @@
                       cigarette => undefined}).
 -define(INIT_NODE, #{g => 0, h => 0,
                      houses => lists:duplicate(5, ?INIT_HOUSE),
-                     values => ?INIT_VALUES}).
+                     statements => ?STATEMENT_CONFIGS}).
 
 start() ->
   general_graph_search([start_node()],
                         fun evaluation_comp/2,
                         fun is_solution/1,
-                        fun create_child/1, 0).
+                        fun create_children/1, 0).
 
 %%% ===============================================
 %%% Internal function
 %%% ===============================================
 
-general_graph_search(Open, EvaluationComp, _, _, 2000) ->
-  Current = min_f(EvaluationComp, Open),
-  io:format("----------------------------------CURRENT: ~p EVAL ~n~p~nFuel:~p~n", [Current, evaluation_fun(Current), 2000]),
+general_graph_search(Open, EvaluationComp, _, _, 150) ->
+  io:format("END----------------------------------OPEN: ~p~n", [Open]),
   {error, no_solution};
 general_graph_search(Open, EvaluationComp, IsSolution, CreateChildren, Fuel) ->
-  %io:format("----------------------------------OPEN: ~p~nFuel:~p~n", [Open, Fuel]),
   Current = min_f(EvaluationComp, Open),
-  io:format("----------------------------------CURRENT: ~p~nFuel:~p~n", [(evaluation_fun(Current)), Fuel]),
   case IsSolution(Current) of
     true ->
       {ok, Current};
     false ->
       Open2 = lists:delete(Current, Open),
       Children = CreateChildren(Current),
-      %io:format("Child: ~p~n~n", [Child]),
       general_graph_search(Children ++ Open2,
                            EvaluationComp,
                            IsSolution,
@@ -99,28 +104,48 @@ evaluation_comp(Node1, Node2) ->
     false -> Node2
   end.
 
-create_children(#{houses := Houses, g := G, values := Values} = Node) ->
-  {{Prop1, Value1}, Values1} = choose_random_value(Values),
-  {{Prop2, Value2}, Values2} = choose_random_value(Values1),
+evaluation_fun(#{g := G} = Node) ->
+  F = (14 - G) + 1000 * num_of_true_statement(Node, ?FALSE_STATEMENTS),
+  F.
+
+create_children(#{houses := Houses, g := G,
+                  statements := [{{Prop1, Val1}, {Prop2, Val2}} | T]}) ->
+  Pred = fun 
+          (#{Prop1 := undefined, Prop2 := undefined}) -> true;
+          (_) -> false end,
+  UniqueHouses = unique(Pred, Houses),
+  lists:map(
+    fun
+      (House) ->
+        #{houses => [House#{Prop1 => Val1, Prop2 => Val2} |
+                     lists:delete(House, Houses)],
+          g => G + 1,
+          statements => T}
+    end,
+    UniqueHouses);
+create_children(#{houses := Houses, g := G,
+                  statements := [{{color, green}, {color, ivory}, _} | T]}) ->
+  Green = lists:search(
+            fun (#{color := green}) -> true; (_) -> false end,
+            Houses),
+  Ivory = lists:search(
+      fun (#{color := undefined}) -> true; (_) -> false end,
+      Houses),
+  io:format("Green ~p ~n Ivory ~p~n",[Green, Ivory]),
+  [].
+
+unique(Pred, List) ->
+  lists:foldl(
+    fun
+      (X, Accu) ->
+        case Pred(X) and (not lists:member(X, Accu)) of
+          true -> [X | Accu];
+          false -> Accu
+        end
+    end,
+    [], List).
 
 
-
-  RandHouse = random(Houses),
-  case {Prop1 =/= Prop2, RandHouse} of
-    {true, #{Prop1 := undefined,
-             Prop2 := undefined}} ->
-      Child = Node#{g := G + 1,
-                    houses := [RandHouse#{Prop1 := Value1,
-                                         Prop2 := Value2} |
-                               lists:delete(RandHouse, Houses)],
-                    values := Values2},
-      case (NewH = num_of_true_statement(Child, ?STATEMENTS)) > H of
-        true -> Child#{h := NewH};
-        false -> create_child(Node)
-      end;
-
-    _ -> create_child(Node)
-  end.
 
 choose_random_value(#{color := [],
                       nation := [],
@@ -145,11 +170,6 @@ choose_random_value(Values) ->
 random(List) ->
   lists:nth(rand:uniform(length(List)), List).
 
-evaluation_fun(#{g := G} = Node) ->
-  F = 10 * (14 - num_of_true_statement(Node, ?STATEMENTS)) + G + 1000 * num_of_true_statement(Node, ?FALSE_STATEMENTS),
-  %io:format("evaluation_fun: ~p~p~n", [Node, F]),
-  F.
-
 
 num_of_true_statement(Node, Statements) ->
   lists:foldl(
@@ -161,14 +181,8 @@ num_of_true_statement(Node, Statements) ->
     end,
     0, Statements).
 
-is_solution(Node) ->
-  lists:foldl(
-    fun
-      (Statement, true) -> Statement(Node);
-      (_, false) -> false
-    end,
-    true,
-    ?STATEMENTS).
+is_solution(#{statements := Statements}) ->
+  [] =:= Statements.
 
 start_node() ->
   ?INIT_NODE.
@@ -176,11 +190,32 @@ start_node() ->
 %%% Statements
 %%% ===============================================
 
-statement(Node, {{Prop1, Val1}, {Prop2, Val2}}) ->
+id(T) -> T.
+
+statement(#{houses := Houses}, {{Prop1, Val1}, {Prop2, Val2}}) ->
   lists:any(
-    fun (#{Prop1 := Val1, Prop2 := Val2}) -> true;
+    fun (#{Prop1 := V1, Prop2 := V2})
+          when V1 =:= Val1, V2 =:= Val2 -> true;
         (_) -> false end,
-    Houses).
+    Houses);
+statement(#{houses := Houses}, {{Prop1, Val1}, {Prop2, Val2}, Fun}) ->
+  House1 = lists:search(
+    fun (#{Prop1 := V}) when V =:= Val1 -> true;
+        (_) -> false end,
+    Houses),
+  House2 = lists:search(
+    fun (#{Prop2 := V}) when V =:= Val2 -> true;
+        (_) -> false end,
+    Houses),
+  case {House1, House2} of
+    {{value, #{house_num := HN1}}, {value, #{house_num := HN2}}}
+      when HN1 =/= undefined, HN2 =/= undefined ->
+      (Fun(HN1 - HN2) == 1) 
+  end.
+
+%%% ===============================================
+%%% OLD
+%%% ===============================================
 
 statement_2nd(#{houses := Houses}) ->
   lists:any(
@@ -237,6 +272,7 @@ neg_statement_5th(#{houses := Houses}) ->
         (_) -> false
     end,
     Houses).
+
 
 statement_6th(#{houses := Houses}) ->
   Green = lists:search(
