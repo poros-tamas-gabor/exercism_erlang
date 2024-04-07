@@ -50,22 +50,22 @@
                     beverage => [water, tea, milk, orange_juice, coffee],
                     cigarette => [kools, chesterfields, old_gold, lucky_strike, parliaments]}).
 
-start(StartPop, Fuel) ->
+start(StartPop) ->
   evolution_algo(start_population(StartPop),
                 fun is_solution/1,
                 fun selection/1,
                 fun recombination/1,
                 fun mutation/1,
-                fun combinePopulation/3, Fuel).
+                fun combinePopulation/3, 1).
 %%% ===============================================
 %%% Internal function
 %%% ===============================================
 
 print_with_score(Pop) ->
-  List = lists:map(
-    fun (X) -> {count_true_statement(X), X} end,
-    Pop),
-  io:format("-----------------------------PARENTS~p~n", [List]).
+  Sum = lists:sum(lists:map(
+    fun count_true_statement/1,
+    Pop)),
+  io:format("-----------------------------PARENTS~p~n", [Sum / length(Pop)]).
 
 evolution_algo(Population, _, _, _, _, _, 0) ->
   print_with_score(Population);
@@ -76,7 +76,7 @@ evolution_algo(Population, IsSolution, Selection, Recombination, Mutation, Combi
       lists:filter(fun (X) -> IsSolution(X) end, Population);
     false ->
       {Parents, Others} = Selection(Population),
-      %print_with_score(Parents),
+      print_with_score(Parents),
       %io:format("-----------------------------PARENTS ~p~n", [Parents]),
       Children = Recombination(Parents),
       %io:format("RECOMBINDED ~p~n", [Children]),
@@ -89,32 +89,41 @@ evolution_algo(Population, IsSolution, Selection, Recombination, Mutation, Combi
                      Selection,
                      Recombination,
                      Mutation,
-                     CombinePopulation, Fuel - 1)
+                     CombinePopulation, Fuel)
   end.
 
 -define(MIN_SCORE, 6).
 
 selection(Population) ->
-  lists:foldl(
-  fun
-    (Ind, {Parent, Others}) ->
-      P = (count_true_statement(Ind) / length(?STATEMENT_CONFIGS)) * 100,
-      Rand = rand:uniform(100) + rand:uniform(10),
-      case (Rand < P) of
-        true ->
-          {[Ind | Parent], Others};
-        false ->
-          {Parent, [Ind | Others]}
-      end
-  end
-).
+  {Parents, Others} = lists:foldl(
+    fun
+      (Ind, {Parent, Others}) ->
+        P = (count_true_statement(Ind) / length(?STATEMENT_CONFIGS)) * 100,
+        Rand = rand:uniform(100) - rand:uniform(10),
+        %io:format("Selection P ~p, Rand ~p~n",[P, Rand]),
+        case (Rand < P) of
+          true ->
+            {[Ind | Parent], Others};
+          false ->
+            {Parent, [Ind | Others]}
+        end
+    end,
+    {[], []},
+    Population),
+  case length(Parents) < 2 of
+    true -> selection(Population);
+    false -> {Parents, Others}
+  end. 
 
+
+choose_random(N, _) when N < 1  -> [];
 choose_random(N, List) when N >= length(List) ->
   List;
 choose_random(N, List) ->
   choose_random(N, List, []).
 
 choose_random(0, _, Accu) -> Accu;
+choose_random(_, [], Accu) -> Accu;
 choose_random(N, List, Accu) ->
   Ind = rand:uniform(length(List)),
   Elem = lists:nth(Ind, List),
@@ -131,23 +140,26 @@ start_population(N) ->
  [random_individual() || _ <- lists:seq(1, N)].
 
 combinePopulation(Parents, Low, Children) ->
-  N = length(Children),
-  choose_random(2 * (N div 3), Parents)
-    ++ Children
-    ++ choose_random(N div 3, Low).
+  ChildrenNum = length(Children),
+  P = choose_random(4/5* (20 - ChildrenNum), Parents),
+  L = choose_random(1/5* (20 - ChildrenNum), Low),
+  lists:uniq(P ++ L ++ Children).
 
 mutation(Population) ->
-  N = length(Population),
   lists:map(
-    fun (Ind) -> mutation_ind(Ind, rand:uniform(N)) end,
+    fun (Ind) -> mutation_ind(Ind) end,
     Population).
 
-mutation_ind(Individual, Rand) when (Rand rem ?LIKELYHOOD) =:= 0 ->
-  RandAttr = lists:nth(rand:uniform(6), maps:keys(?INIT_VALUES)),
-  [H | V] = maps:get(RandAttr, Individual),
-  Individual#{RandAttr => V ++ [H]};
-mutation_ind(Individual, _) -> Individual.
-
+mutation_ind(Individual) ->
+  Rand = rand:uniform(100),
+  case Rand =< ?LIKELYHOOD of
+    true ->
+      RandAttr = lists:nth(rand:uniform(6), maps:keys(?INIT_VALUES)),
+      [H | V] = maps:get(RandAttr, Individual),
+      Individual#{RandAttr => V ++ [H]};
+    _ ->
+      Individual
+  end.
 
 random_individual() ->
   maps:map(
@@ -180,8 +192,8 @@ create_pairs(List) when (length(List) rem 2) =:= 0 ->
   List),
   Pairs;
 create_pairs(List) ->
-  RandInd = rand:uniform(length(List) - 1) + 1,
-  create_pairs([lists:nth(RandInd, List) | List]).
+  Last = lists:last(List),
+  create_pairs([Last | List]).
 
 parcial_combination([Ind1, Ind2]) ->
   lists:foldl(
@@ -220,17 +232,6 @@ substract(List, Sub) ->
     fun(X, Acc) -> lists:delete(X, Acc) end,
     List,
     Sub).
-
-
-
-
-
-
-
-
-
-  
-
 
 
 %%% ===============================================
