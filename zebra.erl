@@ -23,441 +23,204 @@
   {{color, blue}, {house_num, 2}},
   {{color, green}, {color, ivory}, fun id/1},
   {{cigarette, chesterfields}, {pet, fox}, fun abs/1},
-  {{cigarette, kools}, {pet, horse}, fun abs/1}
+  {{cigarette, kools}, {pet, horse}, fun abs/1},
+  {unique}
 ]).
 
 -define(STATEMENTS,
   lists:map(
   fun
-    (Config) -> fun (X) -> statement(X, Config) end
+    (Config) -> fun (Individual) -> statement(Config, Individual) end
   end,
   ?STATEMENT_CONFIGS
   )).
-
--define(FALSE_STATEMENTS,
-  [fun neg_statement_2nd/1,
-   fun neg_statement_3rd/1,
-   fun neg_statement_4th/1,
-   fun neg_statement_5th/1,
-   fun neg_statement_6th/1,
-   fun neg_statement_7th/1,
-   fun neg_statement_8th/1,
-   fun neg_statement_9th/1,
-   fun neg_statement_10th/1,
-   fun neg_statement_11th/1,
-   fun neg_statement_12th/1,
-   fun neg_statement_13th/1,
-   fun neg_statement_14th/1,
-   fun neg_statement_15th/1]).
 
 -define(INIT_VALUES, #{color => [red, green, ivory, yellow, blue],
                        nation => [english, spaniard, ukrainian, norwegian, japanese],
                        pet => [dog, snail, fox, horse, zebra],
                        house_num => lists:seq(1, 5),
                        beverage => [tea, coffee, milk, orange_juice, water],
-                       cigarette => [old_gold, kools, chesterfields, lucky_strike]}).
--define(PROPERTIES, [color, nation, pet, house_num, beverage, cigarette]).
--define(INIT_HOUSE, #{color => undefined,
-                      nation => undefined,
-                      pet => undefined,
-                      house_num => undefined,
-                      beverage => undefined,
-                      cigarette => undefined}).
--define(INIT_NODE, #{g => 0, h => 0,
-                     houses => lists:duplicate(5, ?INIT_HOUSE),
-                     statements => ?STATEMENT_CONFIGS}).
-
-start() ->
-  general_graph_search([start_node()],
-                        fun evaluation_comp/2,
-                        fun is_solution/1,
-                        fun create_children/1, 0).
+                       cigarette => [old_gold, kools, chesterfields, lucky_strike, parliaments]}).
+-define(SOLUTION, #{color => [yellow, blue, red, ivory, green],
+                    nation => [norwegian, ukrainian, english, spaniard, japanese],
+                    pet => [fox, horse, snail, dog, zebra],
+                    house_num => lists:seq(1, 5),
+                    beverage => [water, tea, milk, orange_juice, coffee],
+                    cigarette => [kools, chesterfields, old_gold, lucky_strike, parliaments]}).
 
 %%% ===============================================
 %%% Internal function
 %%% ===============================================
 
-general_graph_search(Open, EvaluationComp, _, _, 150) ->
-  io:format("END----------------------------------OPEN: ~p~n", [Open]),
-  {error, no_solution};
-general_graph_search(Open, EvaluationComp, IsSolution, CreateChildren, Fuel) ->
-  Current = min_f(EvaluationComp, Open),
-  case IsSolution(Current) of
-    true ->
-      {ok, Current};
+evolution_algo(Population, IsSolution, Selection, Recombination, Mutation, PutBack) ->
+  case lists:any(IsSolution, Population) of
+    true -> Population;
     false ->
-      Open2 = lists:delete(Current, Open),
-      Children = CreateChildren(Current),
-      general_graph_search(Children ++ Open2,
-                           EvaluationComp,
-                           IsSolution,
-                           CreateChildren,
-                           Fuel + 1)
+      Parents = Selection(Population),
+      Children = Recombination(Parents),
+      Children2 = Mutation(Children),
+      evolution_algo(PutBack(Population, Children2),
+                     IsSolution,
+                     Selection,
+                     Recombination,
+                     Mutation,
+                     PutBack)
   end.
 
-min_f(Comp, List) ->
-  lists:foldl(Comp, hd(List), List).
-
-evaluation_comp(Node1, Node2) ->
-  case evaluation_fun(Node1) < evaluation_fun(Node2) of
-    true -> Node1;
-    false -> Node2
-  end.
-
-evaluation_fun(#{g := G} = Node) ->
-  F = (14 - G) + 1000 * num_of_true_statement(Node, ?FALSE_STATEMENTS),
-  F.
-
-create_children(#{houses := Houses, g := G,
-                  statements := [{{Prop1, Val1}, {Prop2, Val2}} | T]}) ->
-  Pred = fun 
-          (#{Prop1 := undefined, Prop2 := undefined}) -> true;
-          (_) -> false end,
-  UniqueHouses = unique(Pred, Houses),
-  lists:map(
-    fun
-      (House) ->
-        #{houses => [House#{Prop1 => Val1, Prop2 => Val2} |
-                     lists:delete(House, Houses)],
-          g => G + 1,
-          statements => T}
-    end,
-    UniqueHouses);
-create_children(#{houses := Houses, g := G,
-                  statements := [{{color, green}, {color, ivory}, _} | T]}) ->
-  Green = lists:search(
-            fun (#{color := green}) -> true; (_) -> false end,
-            Houses),
-  Ivory = lists:search(
-      fun (#{color := undefined}) -> true; (_) -> false end,
-      Houses),
-  io:format("Green ~p ~n Ivory ~p~n",[Green, Ivory]),
-  [].
-
-unique(Pred, List) ->
+selection(Population) ->
   lists:foldl(
     fun
-      (X, Accu) ->
-        case Pred(X) and (not lists:member(X, Accu)) of
-          true -> [X | Accu];
-          false -> Accu
+      (Ind, Acc) ->
+        case count_true_statement(Ind) > 6 of
+          true ->
+            [Ind | Acc];
+          false ->
+            Rand = rand:uniform(length(Population)),
+            case Rand div 5 of
+              0 -> [Ind | Acc];
+              _ -> Acc
+            end
         end
     end,
-    [], List).
+    [],
+    Population
+  ).
 
+recombination([_]) -> error;
+recombination(Individuals) ->
+  Pairs = create_pairs(Individuals),
+  lists:flatten(lists:map(fun parcial_combination/1, Pairs)).
 
+start_population(N) ->
+ [random_individual() || _ <- lists:seq(1, N)].
 
-choose_random_value(#{color := [],
-                      nation := [],
-                      pet := [],
-                      house_num := [],
-                      beverage := [],
-                      cigarette := []}) ->
-  {error, no_value};
+random_individual() ->
+  maps:map(
+    fun (_, V) -> randomize(V) end,
+    ?INIT_VALUES
+).
 
-choose_random_value(Values) ->
-  RandProp = random(?PROPERTIES),
-  #{RandProp := PropValues} = Values,
-  case PropValues of
-    [] -> choose_random_value(Values);
-    _ ->
-      RandValue = random(PropValues),
-      {{RandProp, RandValue}, 
-        Values#{RandProp := lists:delete(RandValue,
-                                         PropValues)}}
-  end.
-
-random(List) ->
-  lists:nth(rand:uniform(length(List)), List).
-
-
-num_of_true_statement(Node, Statements) ->
+count_true_statement(Ind) ->
   lists:foldl(
     fun (Statement, Count) ->
-      case Statement(Node) of
+      case Statement(Ind) of
         true -> Count + 1;
         false -> Count
       end
     end,
-    0, Statements).
+    0, ?STATEMENTS).
 
-is_solution(#{statements := Statements}) ->
-  [] =:= Statements.
+is_solution(Ind) ->
+  count_true_statement(Ind) =:= length(?STATEMENT_CONFIGS).
 
-start_node() ->
-  ?INIT_NODE.
+create_pairs(List) when (length(List) rem 2) =:= 0 ->
+  [[] | Pairs] = lists:foldl(
+  fun
+    (Ind, [[] | T]) ->
+      [[Ind] | T];
+    (Ind, [[Pair] | T]) ->
+      [[], [Ind, Pair] | T]
+  end,
+  [[]],
+  List),
+  Pairs;
+create_pairs(List) ->
+  RandInd = rand:uniform(length(List) - 1) + 1,
+  create_pairs([lists:nth(RandInd, List) | List]).
+
+parcial_combination([Ind1, Ind2]) ->
+  lists:foldl(
+  fun
+    (K, [Fst, Snd]) ->
+      {L1, L2} = parcial_combination(maps:get(K, Ind1), maps:get(K, Ind2)),
+      [Fst#{K => L1}, Snd#{K => L2}]
+  end,
+  [#{}, #{}],
+  maps:keys(Ind1)).
+
+parcial_combination([A1, A2, A3, A4, A5],
+                    [B1, B2, B3, B4, B5]) ->
+  {[NA1, NA4, NA5],
+   [NB1, NB4, NB5]} = parcial_combination([A1, A4, A5], [A1, A4, A5], [], [B1, B4, B5], [B1, B4, B5], []),
+  {[NA1, B2, B3, NA4, NA5],
+   [NB1, A2, A3, NB4, NB5]}.
+
+parcial_combination([], _As, Aaccu, [], _Bs, Baccu) -> {Aaccu, Baccu};
+parcial_combination(TA, _As, Aaccu, [], _Bs, Baccu) -> {Aaccu ++ TA, Baccu};
+parcial_combination([], _As, Aaccu, TB, _Bs, Baccu) -> {Aaccu, Baccu ++ TB};
+parcial_combination([HA | TA], As, Aaccu, [HB | TB], Bs, Baccu) ->
+  case {lists:member(HA, Bs), lists:member(HB, As)} of
+    {true, true} ->
+      parcial_combination(TA, As, Aaccu ++ [HA], TB, Bs, Baccu ++ [HB]);
+    {false, false} ->
+      parcial_combination(TA, As, Aaccu ++ [HB], TB, Bs, Baccu ++ [HA]);
+    {true, false} ->
+      parcial_combination(TA, As, Aaccu ++ [HA], [HB | TB], Bs, Baccu);
+    {false, true} ->
+      parcial_combination([HA | TA], As, Aaccu, TB, Bs, Baccu ++ [HB])
+  end.
+
+
+
+
+
+
+
+
+
+  
+
+
+
 %%% ===============================================
-%%% Statements
+%%% Statement
 %%% ===============================================
 
-id(T) -> T.
-
-statement(#{houses := Houses}, {{Prop1, Val1}, {Prop2, Val2}}) ->
-  lists:any(
-    fun (#{Prop1 := V1, Prop2 := V2})
-          when V1 =:= Val1, V2 =:= Val2 -> true;
-        (_) -> false end,
-    Houses);
-statement(#{houses := Houses}, {{Prop1, Val1}, {Prop2, Val2}, Fun}) ->
-  House1 = lists:search(
-    fun (#{Prop1 := V}) when V =:= Val1 -> true;
-        (_) -> false end,
-    Houses),
-  House2 = lists:search(
-    fun (#{Prop2 := V}) when V =:= Val2 -> true;
-        (_) -> false end,
-    Houses),
-  case {House1, House2} of
-    {{value, #{house_num := HN1}}, {value, #{house_num := HN2}}}
-      when HN1 =/= undefined, HN2 =/= undefined ->
-      (Fun(HN1 - HN2) == 1) 
-  end.
+statement({unique}, Ind) ->
+  maps:fold(
+    fun (_, _, false) -> false;
+        (_Attr, Values, true) ->
+        lists:uniq(Values) =:= Values
+    end,
+    true,
+    Ind);
+statement({{K1, V1},{K2, V2}}, Ind) ->
+  L1 = maps:get(K1, Ind),
+  L2 = maps:get(K2, Ind),
+  statement(V1, L1, V2, L2);
+statement({{K1, V1}, {K2, V2}, Fun}, Ind) ->
+  HouseNums = maps:get(house_num, Ind),
+  L1 = maps:get(K1, Ind),
+  L2 = maps:get(K2, Ind),
+  Ind1 = index(V1, L1),
+  Ind2 = index(V2, L2),
+  HN1 = lists:nth(Ind1, HouseNums),
+  HN2 = lists:nth(Ind2, HouseNums),
+  (Fun(HN1 - HN2) == 1).
+  
+statement(V1, [V1 | _], V2, [V2 | _]) -> true;
+statement(_, [], _, []) -> false;
+statement(V1, [_ | T1], V2, [_ | T2]) -> statement(V1, T1, V2, T2).
 
 %%% ===============================================
-%%% OLD
+%%% Utils
 %%% ===============================================
 
-statement_2nd(#{houses := Houses}) ->
-  lists:any(
-    fun (#{color := red, nation := english}) -> true;
-        (_) -> false end,
-    Houses).
+id(X) -> X.
 
-neg_statement_2nd(#{houses := Houses}) ->
-  lists:any(
-    fun (#{color := red, nation := Nation}) when Nation =/= english, Nation =/= undefined -> true;
-        (#{color := Color, nation := english}) when Color =/= red, Color =/= undefined -> true;
-        (_) -> false
-    end,
-    Houses).
+index(E, List) ->
+  index(E, List, 1).
 
-statement_3rd(#{houses := Houses}) ->
-  lists:any(
-    fun (#{pet := dog, nation := spaniard}) -> true;
-        (_) -> false end,
-    Houses).
+index(E, [E | _], Num) ->
+  Num;
+index(E, [_ | T], Num) ->
+  index(E, T, Num + 1);
+index(_, [], _) ->
+  error.
 
-neg_statement_3rd(#{houses := Houses}) ->
-  lists:any(
-    fun (#{pet := Pet, nation := spaniard}) when Pet =/= dog, Pet =/= undefined -> true;
-        (#{pet := dog, nation := Nation}) when Nation =/= spaniard, Nation =/= undefined -> true;
-        (_) -> false
-    end,
-    Houses).
-
-statement_4th(#{houses := Houses}) ->
-  lists:any(
-  fun (#{beverage := coffee, color := green}) -> true;
-      (_) -> false end,
-  Houses).
-
-neg_statement_4th(#{houses := Houses}) ->
-  lists:any(
-    fun (#{beverage := Beverage, color := green}) when Beverage =/= coffee, Beverage =/= undefined -> true;
-        (#{beverage := coffee, color := Color}) when Color =/= green, Color =/= undefined -> true;
-        (_) -> false
-    end,
-    Houses).
-
-statement_5th(#{houses := Houses}) ->
-  lists:any(
-  fun (#{nation := ukrainian, beverage := tea}) -> true;
-      (_) -> false end,
-  Houses).
-
-neg_statement_5th(#{houses := Houses}) ->
-  lists:any(
-    fun (#{nation := Nation, beverage := tea}) when Nation =/= ukrainian, Nation =/= undefined -> true;
-        (#{nation := ukrainian, beverage := Beverage}) when Beverage =/= tea, Beverage =/= undefined -> true;
-        (_) -> false
-    end,
-    Houses).
-
-
-statement_6th(#{houses := Houses}) ->
-  Green = lists:search(
-    fun (#{color := green}) -> true; (_) -> false end,
-    Houses),
-  Ivory = lists:search(
-    fun (#{color := ivory}) -> true; (_) -> false end,
-    Houses),
-  case {Green, Ivory} of
-    {{value, #{house_num := GN}}, {value, #{house_num := IN}}}
-      when GN =/= undefined, IN =/= undefined, ((GN - IN) == 1) ->
-      true;
-    _ ->
-      false
-  end.
-
-neg_statement_6th(#{houses := Houses}) ->
-  Green = lists:search(
-    fun (#{color := green}) -> true; (_) -> false end,
-    Houses),
-  Ivory = lists:search(
-    fun (#{color := ivory}) -> true; (_) -> false end,
-    Houses),
-  case {Green, Ivory} of
-    {{value, #{house_num := GN}}, {value, #{house_num := IN}}}
-      when GN =/= undefined, IN =/= undefined, ((GN - IN) =/= 1) ->
-      true;
-    _ ->
-      false
-  end.
-
-statement_7th(#{houses := Houses}) ->
-  lists:any(
-  fun (#{cigarette := old_gold, pet := snail}) -> true;
-      (_) -> false end,
-  Houses).
-
-neg_statement_7th(#{houses := Houses}) ->
-  lists:any(
-    fun (#{cigarette := Cigarette, pet := snail})
-          when Cigarette =/= old_gold, Cigarette =/= undefined -> true;
-        (#{cigarette := old_gold, pet := Pet})
-          when Pet =/= snail, Pet =/= undefined -> true;
-        (_) -> false
-    end,
-    Houses).
-
-statement_8th(#{houses := Houses}) ->
-  lists:any(
-  fun (#{cigarette := kools, color := yellow}) -> true;
-      (_) -> false end,
-  Houses).
-
-neg_statement_8th(#{houses := Houses}) ->
-  lists:any(
-    fun (#{cigarette := Cigarette, color := yellow}) when Cigarette =/= kools, Cigarette =/= undefined -> true;
-        (#{cigarette := kools, color := Color}) when Color =/= yellow, Color =/= undefined -> true;
-        (_) -> false
-    end,
-    Houses).
-
-statement_9th(#{houses := Houses}) ->
-  lists:any(
-  fun (#{beverage := milk, house_num := 3}) -> true;
-      (_) -> false end,
-  Houses).
-
-neg_statement_9th(#{houses := Houses}) ->
-  lists:any(
-    fun (#{beverage := Beverage, house_num := 3}) when Beverage =/= milk, Beverage =/= undefined -> true;
-        (#{beverage := milk, house_num := HouseNum}) when HouseNum =/= 3, HouseNum =/= undefined -> true;
-        (_) -> false
-    end,
-    Houses).
-
-statement_10th(#{houses := Houses}) ->
-  lists:any(
-  fun (#{nation := norwegian, house_num := 1}) -> true;
-      (_) -> false end,
-  Houses). 
-
-neg_statement_10th(#{houses := Houses}) ->
-  lists:any(
-    fun (#{nation := Nation, house_num := 1}) when Nation =/= norwegian, Nation =/= undefined -> true;
-        (#{nation := norwegian, house_num := HouseNum}) when HouseNum =/= 1, HouseNum =/= undefined -> true;
-        (_) -> false
-    end,
-    Houses).
-
-statement_11th(#{houses := Houses}) ->
-  Chester = lists:search(
-    fun (#{cigarette := chesterfields}) -> true; (_) -> false end,
-    Houses),
-  Fox = lists:search(
-    fun (#{pet := fox}) -> true; (_) -> false end,
-    Houses),
-  case {Chester, Fox} of
-    {{value, #{house_num := N1}}, {value, #{house_num := N2}}}
-      when N1 =/= undefined, N2 =/= undefined, (abs(N1 - N2) == 1) ->
-      true;
-    _ ->
-      false
-  end.
-
-neg_statement_11th(#{houses := Houses}) ->
-  Chester = lists:search(
-    fun (#{cigarette := chesterfields}) -> true; (_) -> false end,
-    Houses),
-  Fox = lists:search(
-    fun (#{pet := fox}) -> true; (_) -> false end,
-    Houses),
-  case {Chester, Fox} of
-    {{value, #{house_num := N1}}, {value, #{house_num := N2}}}
-      when N1 =/= undefined, N2 =/= undefined, (abs(N1 - N2) =/= 1) ->
-      true;
-    _ ->
-      false
-  end.
-
-statement_12th(#{houses := Houses}) ->
-  Kools = lists:search(
-    fun (#{cigarette := kools}) -> true; (_) -> false end,
-    Houses),
-  Horse = lists:search(
-    fun (#{pet := horse}) -> true; (_) -> false end,
-    Houses),
-  case {Kools, Horse} of
-    {{value, #{house_num := N1}}, {value, #{house_num := N2}}}
-      when N1 =/= undefined, N2 =/= undefined, (abs(N1 - N2) == 1) ->
-      true;
-    _ ->
-      false
-  end.
-
-neg_statement_12th(#{houses := Houses}) ->
-  Kools = lists:search(
-    fun (#{cigarette := kools}) -> true; (_) -> false end,
-    Houses),
-  Horse = lists:search(
-    fun (#{pet := horse}) -> true; (_) -> false end,
-    Houses),
-  case {Kools, Horse} of
-    {{value, #{house_num := N1}}, {value, #{house_num := N2}}}
-      when N1 =/= undefined, N2 =/= undefined, (abs(N1 - N2) =/= 1) ->
-      true;
-    _ ->
-      false
-  end.
-
-statement_13th(#{houses := Houses}) ->
-  lists:any(
-  fun (#{beverage := orange_juice, cigarette := lucky_strike}) -> true;
-      (_) -> false end,
-  Houses).
-
-neg_statement_13th(#{houses := Houses}) ->
-  lists:any(
-    fun (#{beverage := Beverage, cigarette := lucky_strike}) when Beverage =/= orange_juice, Beverage =/= undefined -> true;
-        (#{beverage := orange_juice, cigarette := Cigarette}) when Cigarette =/= lucky_strike, Cigarette =/= undefined -> true;
-        (_) -> false
-    end,
-    Houses).
-
-statement_14th(#{houses := Houses}) ->
-  lists:any(
-  fun (#{nation := japanese, cigarette := parliaments}) -> true;
-      (_) -> false end,
-  Houses).
-neg_statement_14th(#{houses := Houses}) ->
-  lists:any(
-    fun (#{nation := Nation, cigarette := parliaments}) when Nation =/= japanese, Nation =/= undefined -> true;
-        (#{nation := japanese, cigarette := Cigarette}) when Cigarette =/= parliaments, Cigarette =/= undefined -> true;
-        (_) -> false
-    end,
-    Houses).
-
-statement_15th(#{houses := Houses}) ->
-  lists:any(
-  fun (#{color := blue, house_num := 2}) -> true;
-      (_) -> false end,
-  Houses).
-neg_statement_15th(#{houses := Houses}) ->
-  lists:any(
-    fun (#{color := Color, house_num := 2}) when Color =/= blue, Color =/= undefined -> true;
-        (#{color := blue, house_num := HouseNum}) when HouseNum =/= 2, HouseNum =/= undefined -> true;
-        (_) -> false
-    end,
-    Houses).
+randomize(List) -> randomize([], List).
+randomize(Randomized, []) -> Randomized;
+randomize(Randomized, Ordered) ->
+  RandInd = rand:uniform(length(Ordered)),
+  Rand = lists:nth(RandInd, Ordered),
+  randomize([Rand | Randomized], lists:delete(Rand, Ordered)).
