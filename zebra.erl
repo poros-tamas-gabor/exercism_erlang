@@ -27,6 +27,8 @@
   {unique}
 ]).
 
+-define(LIKELYHOOD, 5).
+
 -define(STATEMENTS,
   lists:map(
   fun
@@ -48,43 +50,77 @@
                     beverage => [water, tea, milk, orange_juice, coffee],
                     cigarette => [kools, chesterfields, old_gold, lucky_strike, parliaments]}).
 
+start(StartPop, Fuel) ->
+  evolution_algo(start_population(StartPop),
+                fun is_solution/1,
+                fun selection/1,
+                fun recombination/1,
+                fun mutation/1,
+                fun combinePopulation/3, Fuel).
 %%% ===============================================
 %%% Internal function
 %%% ===============================================
 
-evolution_algo(Population, IsSolution, Selection, Recombination, Mutation, PutBack) ->
+print_with_score(Pop) ->
+  List = lists:map(
+    fun (X) -> {count_true_statement(X), X} end,
+    Pop),
+  io:format("-----------------------------PARENTS~p~n", [List]).
+
+evolution_algo(Population, _, _, _, _, _, 0) ->
+  print_with_score(Population);
+evolution_algo(Population, IsSolution, Selection, Recombination, Mutation, CombinePopulation, Fuel) ->
   case lists:any(IsSolution, Population) of
-    true -> Population;
+    true -> 
+      io:format("REAL SOLUTION"),
+      lists:filter(fun (X) -> IsSolution(X) end, Population);
     false ->
-      Parents = Selection(Population),
+      {Parents, Others} = Selection(Population),
+      %print_with_score(Parents),
+      %io:format("-----------------------------PARENTS ~p~n", [Parents]),
       Children = Recombination(Parents),
+      %io:format("RECOMBINDED ~p~n", [Children]),
       Children2 = Mutation(Children),
-      evolution_algo(PutBack(Population, Children2),
+      %io:format("Mutation ~p~n", [Children2]),
+      NewPopulation = CombinePopulation(Parents, Others, Children2),
+      %io:format("NewPopulation ~p~n", [NewPopulation]),
+      evolution_algo(NewPopulation,
                      IsSolution,
                      Selection,
                      Recombination,
                      Mutation,
-                     PutBack)
+                     CombinePopulation, Fuel - 1)
   end.
+
+-define(MIN_SCORE, 6).
 
 selection(Population) ->
   lists:foldl(
-    fun
-      (Ind, Acc) ->
-        case count_true_statement(Ind) > 6 of
-          true ->
-            [Ind | Acc];
-          false ->
-            Rand = rand:uniform(length(Population)),
-            case Rand div 5 of
-              0 -> [Ind | Acc];
-              _ -> Acc
-            end
-        end
-    end,
-    [],
-    Population
-  ).
+  fun
+    (Ind, {Parent, Others}) ->
+      P = (count_true_statement(Ind) / length(?STATEMENT_CONFIGS)) * 100,
+      Rand = rand:uniform(100) + rand:uniform(10),
+      case (Rand < P) of
+        true ->
+          {[Ind | Parent], Others};
+        false ->
+          {Parent, [Ind | Others]}
+      end
+  end
+).
+
+choose_random(N, List) when N >= length(List) ->
+  List;
+choose_random(N, List) ->
+  choose_random(N, List, []).
+
+choose_random(0, _, Accu) -> Accu;
+choose_random(N, List, Accu) ->
+  Ind = rand:uniform(length(List)),
+  Elem = lists:nth(Ind, List),
+  choose_random(N - 1,
+                lists:delete(Elem, List),
+                [Elem | Accu]).
 
 recombination([_]) -> error;
 recombination(Individuals) ->
@@ -93,6 +129,25 @@ recombination(Individuals) ->
 
 start_population(N) ->
  [random_individual() || _ <- lists:seq(1, N)].
+
+combinePopulation(Parents, Low, Children) ->
+  N = length(Children),
+  choose_random(2 * (N div 3), Parents)
+    ++ Children
+    ++ choose_random(N div 3, Low).
+
+mutation(Population) ->
+  N = length(Population),
+  lists:map(
+    fun (Ind) -> mutation_ind(Ind, rand:uniform(N)) end,
+    Population).
+
+mutation_ind(Individual, Rand) when (Rand rem ?LIKELYHOOD) =:= 0 ->
+  RandAttr = lists:nth(rand:uniform(6), maps:keys(?INIT_VALUES)),
+  [H | V] = maps:get(RandAttr, Individual),
+  Individual#{RandAttr => V ++ [H]};
+mutation_ind(Individual, _) -> Individual.
+
 
 random_individual() ->
   maps:map(
@@ -159,6 +214,12 @@ parcial_combination([HA | TA], As, Aaccu, [HB | TB], Bs, Baccu) ->
     {false, true} ->
       parcial_combination([HA | TA], As, Aaccu, TB, Bs, Baccu ++ [HB])
   end.
+
+substract(List, Sub) ->
+  lists:foldl(
+    fun(X, Acc) -> lists:delete(X, Acc) end,
+    List,
+    Sub).
 
 
 
