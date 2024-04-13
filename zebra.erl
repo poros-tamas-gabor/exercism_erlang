@@ -21,7 +21,8 @@
   {{color, blue}, {nation, norwegian}, fun id/1}
 ]).
 
--define(LIKELYHOOD, 5).
+-define(LIKELIHOOD, 5).
+-define(DEFAULT_STARTING_POPULATION_SIZE, 30).
 
 -define(STATEMENTS,
   lists:map(
@@ -37,16 +38,48 @@
                        house_num => lists:seq(1, 5),
                        beverage => [tea, coffee, milk, orange_juice, water],
                        cigarette => [old_gold, kools, chesterfields, lucky_strike, parliaments]}).
--define(SOLUTION, #{color => [yellow, blue, red, ivory, green],
-                    nation => [norwegian, ukrainian, english, spaniard, japanese],
-                    pet => [fox, horse, snail, dog, zebra],
-                    house_num => lists:seq(1, 5),
-                    beverage => [water, tea, milk, orange_juice, coffee],
-                    cigarette => [kools, chesterfields, old_gold, lucky_strike, parliaments]}).
+
+-define(SOLUTION, #{color => 
+                      [yellow, blue, red, ivory, green],
+                    nation => 
+                      [norwegian, ukrainian,
+                       english, spaniard, japanese],
+                    pet =>
+                      [fox, horse, snail, dog, zebra],
+                    house_num => 
+                      lists:seq(1, 5),
+                    beverage =>
+                      [water, tea, milk, orange_juice, coffee],
+                    cigarette =>
+                      [kools, chesterfields,
+                       old_gold, lucky_strike, parliaments]}).
+
+-type individual() :: #{color := list(),
+                        nation := list(),
+                        pet := list(),
+                        house_num := list(),
+                        beverage := list(),
+                        cigarette := list(),
+                        score := integer() % Number of true statements
+                      }.
+
+-define(ATTRIBUTES, [color,
+                     nation,
+                     pet,
+                     house_num,
+                     beverage,
+                     cigarette]).
+
+%%% ===============================================
+%%% API
+%%% ===============================================
+
+start() ->
+  start(?DEFAULT_STARTING_POPULATION_SIZE).
 
 start(PopulationNumber) ->
   evolution_algo(PopulationNumber,
-                 start_population(PopulationNumber),
+                 init_population(PopulationNumber),
                  fun is_solution/1,
                  fun selection/1,
                  fun recombination/1,
@@ -59,9 +92,12 @@ start(PopulationNumber) ->
 print_stat(Pop) ->
   Num = length(Pop),
   Scores = lists:map(
-    fun count_true_statement/1,
+    fun (#{score := Score}) -> Score end,
     Pop),
   io:format("Parent values {min, ~p} {avg, ~p} {max, ~p}~n", [lists:min(Scores), lists:sum(Scores)/Num, lists:max(Scores)]).
+
+init_population(N) ->
+  [random_individual() || _ <- lists:seq(1, N)].
 
 evolution_algo(PopulationNumber,
                Population,
@@ -72,20 +108,17 @@ evolution_algo(PopulationNumber,
                CombinePopulation) ->
   case lists:any(IsSolution, Population) of
     true -> 
-      io:format("SOLUTION"),
+      io:format("Zebra puzzle solution~n"),
       lists:filter(fun (X) -> IsSolution(X) end, Population);
     false ->
       {Parents, Others} = Selection(Population),
-      print_stat(Parents),
+      %print_stat(Parents),
       Children = Recombination(Parents),
-      %io:format("RECOMBINDED ~p~n", [Children]),
       Children2 = Mutation(Children),
-      %io:format("Mutation ~p~n", [Children2]),
       NewPopulation = CombinePopulation(PopulationNumber,
                                         Parents,
                                         Others,
                                         Children2),
-      %io:format("NewPopulation ~p~n", [NewPopulation]),
       evolution_algo(PopulationNumber,
                      NewPopulation,
                      IsSolution,
@@ -98,13 +131,13 @@ evolution_algo(PopulationNumber,
 -define(MIN_SCORE, 6).
 
 %%% SELECTION
-
 selection(Population) ->
   {Parents, Others} = lists:foldl(
     fun
       (Ind, {Parent, Others}) ->
-        P = (count_true_statement(Ind) / length(?STATEMENT_CONFIGS)) * 100,
-        Rand = rand:uniform(100) - rand:uniform(10),
+        P = (maps:get(score, Ind) / length(?STATEMENT_CONFIGS)) * 100,
+        BonusScore = rand:uniform(10),
+        Rand = rand:uniform(100) - BonusScore,
         case (Rand < P) of
           true ->
             {[Ind | Parent], Others};
@@ -119,16 +152,11 @@ selection(Population) ->
     false -> {Parents, Others}
   end. 
 
-
-
 %%% RECOMBINATION
 recombination([_]) -> error;
 recombination(Individuals) ->
   Pairs = create_pairs(Individuals),
   lists:flatten(lists:map(fun parcial_combination/1, Pairs)).
-
-start_population(N) ->
- [random_individual() || _ <- lists:seq(1, N)].
 
 %%% COMBINE POPULATION
 combinePopulation(PopulationNumber, Parents, Low, Children) ->
@@ -138,27 +166,27 @@ combinePopulation(PopulationNumber, Parents, Low, Children) ->
   lists:uniq(P ++ L ++ Children).
 
 %%% MUTATION
-mutation(Population) ->
+mutation(Population) when is_list(Population) ->
   lists:map(
-    fun (Ind) -> mutation_ind(Ind) end,
-    Population).
-
-mutation_ind(Individual) ->
+    fun (Ind) -> mutation(Ind) end,
+    Population);
+mutation(Individual) when is_map(Individual) ->
   Rand = rand:uniform(100),
-  case Rand =< ?LIKELYHOOD of
+  case Rand =< ?LIKELIHOOD of
     true ->
-      RandAttr = lists:nth(rand:uniform(6), maps:keys(?INIT_VALUES)),
+      RandAttr = lists:nth(rand:uniform(6), ?ATTRIBUTES),
       [H | V] = maps:get(RandAttr, Individual),
-      Individual#{RandAttr => V ++ [H]};
+      Mutated = Individual#{RandAttr => V ++ [H]},
+      set_score(Mutated);
     _ ->
       Individual
   end.
 
 random_individual() ->
-  maps:map(
+  Ind = maps:map(
     fun (_, V) -> randomize(V) end,
-    ?INIT_VALUES
-).
+    ?INIT_VALUES),
+  set_score(Ind).
 
 count_true_statement(Ind) ->
   lists:foldl(
@@ -170,8 +198,8 @@ count_true_statement(Ind) ->
     end,
     0, ?STATEMENTS).
 
-is_solution(Ind) ->
-  count_true_statement(Ind) =:= length(?STATEMENT_CONFIGS).
+is_solution(#{score := Score} = _Ind) ->
+  Score =:= length(?STATEMENT_CONFIGS).
 
 create_pairs(List) when (length(List) rem 2) =:= 0 ->
   [[] | Pairs] = lists:foldl(
@@ -189,19 +217,23 @@ create_pairs(List) ->
   create_pairs([Last | List]).
 
 parcial_combination([Ind1, Ind2]) ->
-  lists:foldl(
+  Children = lists:foldl(
   fun
-    (K, [Fst, Snd]) ->
+    (K, [Child1, Child2]) ->
       {L1, L2} = parcial_combination(maps:get(K, Ind1), maps:get(K, Ind2)),
-      [Fst#{K => L1}, Snd#{K => L2}]
+      [Child1#{K => L1}, Child2#{K => L2}]
   end,
   [#{}, #{}],
-  maps:keys(Ind1)).
+  ?ATTRIBUTES),
+  lists:map(fun set_score/1, Children).
 
 parcial_combination([A1, A2, A3, A4, A5],
                     [B1, B2, B3, B4, B5]) ->
   {[NA1, NA4, NA5],
-   [NB1, NB4, NB5]} = parcial_combination([A1, A4, A5], [A1, A4, A5], [], [B1, B4, B5], [B1, B4, B5], []),
+   [NB1, NB4, NB5]} = parcial_combination([A1, A4, A5],
+                                          [A1, A4, A5], [],
+                                          [B1, B4, B5],
+                                          [B1, B4, B5], []),
   {[NA1, B2, B3, NA4, NA5],
    [NB1, A2, A3, NB4, NB5]}.
 
@@ -220,18 +252,23 @@ parcial_combination([HA | TA], As, Aaccu, [HB | TB], Bs, Baccu) ->
       parcial_combination([HA | TA], As, Aaccu, TB, Bs, Baccu ++ [HB])
   end.
 
+set_score(Ind) ->
+  Ind#{score => count_true_statement(Ind)}.
+
 %%% ===============================================
 %%% Statement
 %%% ===============================================
 
 statement({unique}, Ind) ->
-  maps:fold(
-    fun (_, _, false) -> false;
-        (_Attr, Values, true) ->
+  lists:foldl(
+    fun 
+      (_, false) -> false;
+      (Attr, true) ->
+        Values = maps:get(Attr, Ind),
         lists:uniq(Values) =:= Values
     end,
     true,
-    Ind);
+    ?ATTRIBUTES);
 statement({{K1, V1},{K2, V2}}, Ind) ->
   L1 = maps:get(K1, Ind),
   L2 = maps:get(K2, Ind),
