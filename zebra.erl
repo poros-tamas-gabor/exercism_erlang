@@ -1,6 +1,7 @@
 -module(zebra).
 
--compile([export_all]).
+-export([start/0,
+         start/1]).
 
 -define(STATEMENT_CONFIGS,
  [
@@ -22,7 +23,7 @@
 ]).
 
 -define(LIKELIHOOD, 5).
--define(DEFAULT_STARTING_POPULATION_SIZE, 30).
+-define(DEFAULT_STARTING_POPULATION_SIZE, 20).
 
 -define(STATEMENTS,
   lists:map(
@@ -32,27 +33,21 @@
   ?STATEMENT_CONFIGS
   )).
 
--define(INIT_VALUES, #{color => [red, green, ivory, yellow, blue],
-                       nation => [english, spaniard, ukrainian, norwegian, japanese],
-                       pet => [dog, snail, fox, horse, zebra],
-                       house_num => lists:seq(1, 5),
-                       beverage => [tea, coffee, milk, orange_juice, water],
-                       cigarette => [old_gold, kools, chesterfields, lucky_strike, parliaments]}).
+-define(INIT_VALUES, 
+  #{color => [red, green, ivory, yellow, blue],
+    nation => [english, spaniard, ukrainian, norwegian, japanese],
+    pet => [dog, snail, fox, horse, zebra],
+    house_num => lists:seq(1, 5),
+    beverage => [tea, coffee, milk, orange_juice, water],
+    cigarette => [old_gold, kools, chesterfields, lucky_strike, parliaments]}).
 
--define(SOLUTION, #{color => 
-                      [yellow, blue, red, ivory, green],
-                    nation => 
-                      [norwegian, ukrainian,
-                       english, spaniard, japanese],
-                    pet =>
-                      [fox, horse, snail, dog, zebra],
-                    house_num => 
-                      lists:seq(1, 5),
-                    beverage =>
-                      [water, tea, milk, orange_juice, coffee],
-                    cigarette =>
-                      [kools, chesterfields,
-                       old_gold, lucky_strike, parliaments]}).
+-define(SOLUTION, 
+  #{color => [yellow, blue, red, ivory, green],
+    nation => [norwegian, ukrainian, english, spaniard, japanese],
+    pet => [fox, horse, snail, dog, zebra],
+    house_num => lists:seq(1, 5),
+    beverage => [water, tea, milk, orange_juice, coffee],
+    cigarette => [kools, chesterfields, old_gold, lucky_strike, parliaments]}).
 
 -type individual() :: #{color := list(),
                         nation := list(),
@@ -89,13 +84,6 @@ start(PopulationNumber) ->
 %%% Internal function
 %%% ===============================================
 
-print_stat(Pop) ->
-  Num = length(Pop),
-  Scores = lists:map(
-    fun (#{score := Score}) -> Score end,
-    Pop),
-  io:format("Parent values {min, ~p} {avg, ~p} {max, ~p}~n", [lists:min(Scores), lists:sum(Scores)/Num, lists:max(Scores)]).
-
 init_population(N) ->
   [random_individual() || _ <- lists:seq(1, N)].
 
@@ -112,7 +100,7 @@ evolution_algo(PopulationNumber,
       lists:filter(fun (X) -> IsSolution(X) end, Population);
     false ->
       {Parents, Others} = Selection(Population),
-      %print_stat(Parents),
+      print_stat(Parents),
       Children = Recombination(Parents),
       Children2 = Mutation(Children),
       NewPopulation = CombinePopulation(PopulationNumber,
@@ -128,21 +116,19 @@ evolution_algo(PopulationNumber,
                      CombinePopulation)
   end.
 
--define(MIN_SCORE, 6).
-
 %%% SELECTION
 selection(Population) ->
   {Parents, Others} = lists:foldl(
     fun
-      (Ind, {Parent, Others}) ->
-        P = (maps:get(score, Ind) / length(?STATEMENT_CONFIGS)) * 100,
+      (#{score := Score} = Ind, {Parents, Others}) ->
+        ScoreRatio = (Score / length(?STATEMENT_CONFIGS)) * 100,
         BonusScore = rand:uniform(10),
         Rand = rand:uniform(100) - BonusScore,
-        case (Rand < P) of
+        case (Rand < ScoreRatio) of
           true ->
-            {[Ind | Parent], Others};
+            {[Ind | Parents], Others};
           false ->
-            {Parent, [Ind | Others]}
+            {Parents, [Ind | Others]}
         end
     end,
     {[], []},
@@ -159,11 +145,12 @@ recombination(Individuals) ->
   lists:flatten(lists:map(fun parcial_combination/1, Pairs)).
 
 %%% COMBINE POPULATION
-combinePopulation(PopulationNumber, Parents, Low, Children) ->
+combinePopulation(PopulationNumber, Parents, Others, Children) ->
   ChildrenNum = length(Children),
-  P = choose_random(4/5* (PopulationNumber - ChildrenNum), Parents),
-  L = choose_random(1/5* (PopulationNumber - ChildrenNum), Low),
-  lists:uniq(P ++ L ++ Children).
+  case ChildrenNum > PopulationNumber of
+    true -> lists:uniq(Children);
+    false -> lists:uniq(Children ++ Parents ++ Others)
+  end.
 
 %%% MUTATION
 mutation(Population) when is_list(Population) ->
@@ -316,17 +303,10 @@ substract(List, Sub) ->
     List,
     Sub).
 
-choose_random(N, _) when N < 1  -> [];
-choose_random(N, List) when N >= length(List) ->
-  List;
-choose_random(N, List) ->
-  choose_random(N, List, []).
-
-choose_random(0, _, Accu) -> Accu;
-choose_random(_, [], Accu) -> Accu;
-choose_random(N, List, Accu) ->
-  Ind = rand:uniform(length(List)),
-  Elem = lists:nth(Ind, List),
-  choose_random(N - 1,
-                lists:delete(Elem, List),
-                [Elem | Accu]).
+print_stat(Population) ->
+  Num = length(Population),
+  Scores = lists:map(
+    fun (#{score := Score}) -> Score end,
+    Population),
+  io:format("Parent values {min, ~p} {avg, ~p} {max, ~p}~n",
+           [lists:min(Scores), lists:sum(Scores)/Num, lists:max(Scores)]).
