@@ -74,12 +74,12 @@ start() ->
 
 start(PopulationNumber) ->
   evolutionary_algo(PopulationNumber,
-                 init_population(PopulationNumber),
-                 fun is_solution/1,
-                 fun selection/1,
-                 fun recombination/1,
-                 fun mutation/1,
-                 fun combinePopulation/4).
+                    init_population(PopulationNumber),
+                    fun is_solution/1,
+                    fun selection/1,
+                    fun recombination/1,
+                    fun mutation/1,
+                    fun combinePopulation/4).
 %%% ===============================================
 %%% Internal function
 %%% ===============================================
@@ -88,19 +88,19 @@ init_population(N) ->
   [random_individual() || _ <- lists:seq(1, N)].
 
 evolutionary_algo(PopulationNumber,
-               Population,
-               IsSolution,
-               Selection,
-               Recombination,
-               Mutation,
-               CombinePopulation) ->
+                  Population,
+                  IsSolution,
+                  Selection,
+                  Recombination,
+                  Mutation,
+                  CombinePopulation) ->
   case lists:any(IsSolution, Population) of
     true -> 
       io:format("Zebra puzzle solution~n"),
       lists:filter(fun (X) -> IsSolution(X) end, Population);
     false ->
       {Parents, Others} = Selection(Population),
-      %print_stat(Parents),
+      print_stat(Parents),
       Children = Recombination(Parents),
       Children2 = Mutation(Children),
       NewPopulation = CombinePopulation(PopulationNumber,
@@ -108,16 +108,25 @@ evolutionary_algo(PopulationNumber,
                                         Others,
                                         Children2),
       evolutionary_algo(PopulationNumber,
-                     NewPopulation,
-                     IsSolution,
-                     Selection,
-                     Recombination,
-                     Mutation,
-                     CombinePopulation)
+                        NewPopulation,
+                        IsSolution,
+                        Selection,
+                        Recombination,
+                        Mutation,
+                        CombinePopulation)
   end.
 
 %%% SELECTION
 selection(Population) ->
+  selection(length(Population) div 3, Population).
+
+selection(MinLength, Population) ->
+  selection(MinLength, [], Population).
+
+selection(MinLength, Parents, Others)
+    when length(Parents) >= MinLength ->
+  {Parents, Others};
+selection(PopulationNumber, Parents, Others) ->
   Pred = 
     fun (#{score := Score}) ->
       ScoreRatio = (Score / length(?STATEMENT_CONFIGS)) * 100,
@@ -125,11 +134,10 @@ selection(Population) ->
       Rand = rand:uniform(100) - BonusScore,
       Rand < ScoreRatio
     end,
-  {Parents, Others} = lists:partition(Pred, Population),
-  case length(Parents) < 2 of
-    true -> selection(Population);
-    false -> {Parents, Others}
-  end. 
+  {NewParents, Rest} = lists:partition(Pred, Others),
+  selection(PopulationNumber,
+            Parents ++ NewParents,
+            Rest).
 
 %%% RECOMBINATION
 recombination([_]) -> error;
