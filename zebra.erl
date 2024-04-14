@@ -73,7 +73,7 @@ start() ->
   start(?DEFAULT_STARTING_POPULATION_SIZE).
 
 start(PopulationNumber) ->
-  evolution_algo(PopulationNumber,
+  evolutionary_algo(PopulationNumber,
                  init_population(PopulationNumber),
                  fun is_solution/1,
                  fun selection/1,
@@ -87,7 +87,7 @@ start(PopulationNumber) ->
 init_population(N) ->
   [random_individual() || _ <- lists:seq(1, N)].
 
-evolution_algo(PopulationNumber,
+evolutionary_algo(PopulationNumber,
                Population,
                IsSolution,
                Selection,
@@ -100,14 +100,14 @@ evolution_algo(PopulationNumber,
       lists:filter(fun (X) -> IsSolution(X) end, Population);
     false ->
       {Parents, Others} = Selection(Population),
-      print_stat(Parents),
+      %print_stat(Parents),
       Children = Recombination(Parents),
       Children2 = Mutation(Children),
       NewPopulation = CombinePopulation(PopulationNumber,
                                         Parents,
                                         Others,
                                         Children2),
-      evolution_algo(PopulationNumber,
+      evolutionary_algo(PopulationNumber,
                      NewPopulation,
                      IsSolution,
                      Selection,
@@ -137,28 +137,27 @@ recombination(Individuals) ->
   Pairs = create_pairs(Individuals),
   lists:flatten(lists:map(fun parcial_combination/1, Pairs)).
 
-%%% COMBINE POPULATION
-combinePopulation(PopulationNumber, Parents, Others, Children) ->
-  ChildrenNum = length(Children),
-  case ChildrenNum > PopulationNumber of
-    true -> lists:uniq(Children);
-    false -> lists:uniq(Children ++ Parents ++ Others)
-  end.
-
 %%% MUTATION
 mutation(Population) when is_list(Population) ->
   lists:map(fun mutation/1, Population);
 mutation(Individual) when is_map(Individual) ->
   Rand = rand:uniform(100),
-  case Rand =< ?LIKELIHOOD of
-    true ->
-      RandAttr = lists:nth(rand:uniform(6), ?ATTRIBUTES),
-      [H | V] = maps:get(RandAttr, Individual),
-      Mutated = Individual#{RandAttr => V ++ [H]},
-      set_score(Mutated);
-    _ ->
-      Individual
-  end.
+  mutation(Individual, Rand).
+
+mutation(Individual, Rand) when Rand =< ?LIKELIHOOD ->
+  RandAttr = lists:nth(rand:uniform(6), ?ATTRIBUTES),
+  [H | V] = maps:get(RandAttr, Individual),
+  Mutated = Individual#{RandAttr => V ++ [H]},
+  set_score(Mutated);
+mutation(Individual, _) ->
+  Individual.
+
+%%% COMBINE POPULATION
+combinePopulation(PopulationNumber, _, _, Children)
+  when length(Children) > PopulationNumber ->
+  lists:uniq(Children);
+combinePopulation(_, Parents, Others, Children) ->
+  lists:uniq(Children ++ Parents ++ Others).
 
 random_individual() ->
   Ind = maps:map(
@@ -176,29 +175,25 @@ is_solution(#{score := Score} = _Ind) ->
   Score =:= length(?STATEMENT_CONFIGS).
 
 create_pairs(List) when (length(List) rem 2) =:= 0 ->
-  [[] | Pairs] = lists:foldl(
-  fun
-    (Ind, [[] | T]) ->
-      [[Ind] | T];
-    (Ind, [[Pair] | T]) ->
-      [[], [Ind, Pair] | T]
-  end,
-  [[]],
-  List),
-  Pairs;
+  create_pairs(List, []);
 create_pairs(List) ->
   Last = lists:last(List),
   create_pairs([Last | List]).
 
+create_pairs([Fst, Snd | T], Accu) ->
+  create_pairs(T, [[Fst, Snd] | Accu]);
+create_pairs([], Accu) ->
+  Accu.
+
 parcial_combination([Ind1, Ind2]) ->
   Children = lists:foldl(
-  fun
-    (K, [Child1, Child2]) ->
-      {L1, L2} = parcial_combination(maps:get(K, Ind1), maps:get(K, Ind2)),
-      [Child1#{K => L1}, Child2#{K => L2}]
-  end,
-  [#{}, #{}],
-  ?ATTRIBUTES),
+    fun
+      (K, [Child1, Child2]) ->
+        {L1, L2} = parcial_combination(maps:get(K, Ind1), maps:get(K, Ind2)),
+        [Child1#{K => L1}, Child2#{K => L2}]
+    end,
+    [#{}, #{}],
+    ?ATTRIBUTES),
   lists:map(fun set_score/1, Children).
 
 parcial_combination([A1, A2, A3, A4, A5],
