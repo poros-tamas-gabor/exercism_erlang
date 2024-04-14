@@ -118,21 +118,14 @@ evolution_algo(PopulationNumber,
 
 %%% SELECTION
 selection(Population) ->
-  {Parents, Others} = lists:foldl(
-    fun
-      (#{score := Score} = Ind, {Parents, Others}) ->
-        ScoreRatio = (Score / length(?STATEMENT_CONFIGS)) * 100,
-        BonusScore = rand:uniform(10),
-        Rand = rand:uniform(100) - BonusScore,
-        case (Rand < ScoreRatio) of
-          true ->
-            {[Ind | Parents], Others};
-          false ->
-            {Parents, [Ind | Others]}
-        end
+  Pred = 
+    fun (#{score := Score}) ->
+      ScoreRatio = (Score / length(?STATEMENT_CONFIGS)) * 100,
+      BonusScore = rand:uniform(10),
+      Rand = rand:uniform(100) - BonusScore,
+      Rand < ScoreRatio
     end,
-    {[], []},
-    Population),
+  {Parents, Others} = lists:partition(Pred, Population),
   case length(Parents) < 2 of
     true -> selection(Population);
     false -> {Parents, Others}
@@ -154,9 +147,7 @@ combinePopulation(PopulationNumber, Parents, Others, Children) ->
 
 %%% MUTATION
 mutation(Population) when is_list(Population) ->
-  lists:map(
-    fun (Ind) -> mutation(Ind) end,
-    Population);
+  lists:map(fun mutation/1, Population);
 mutation(Individual) when is_map(Individual) ->
   Rand = rand:uniform(100),
   case Rand =< ?LIKELIHOOD of
@@ -176,14 +167,10 @@ random_individual() ->
   set_score(Ind).
 
 count_true_statement(Ind) ->
-  lists:foldl(
-    fun (Statement, Count) ->
-      case Statement(Ind) of
-        true -> Count + 1;
-        false -> Count
-      end
-    end,
-    0, ?STATEMENTS).
+  {Trues, _} = lists:partition(
+    fun (Statement) -> Statement(Ind) end
+    ,?STATEMENTS),
+  length(Trues).
 
 is_solution(#{score := Score} = _Ind) ->
   Score =:= length(?STATEMENT_CONFIGS).
